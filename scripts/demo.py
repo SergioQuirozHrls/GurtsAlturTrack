@@ -46,6 +46,15 @@ def main() -> None:
     mean = artifact["feature_mean"]
     std = artifact["feature_std"]
 
+    n_expected = getattr(model, "n_features_in_", len(FEATURE_NAMES))
+    if n_expected != len(FEATURE_NAMES):
+        print(
+            f"model.pkl was trained on {n_expected} features but current "
+            f"features/build.py produces {len(FEATURE_NAMES)}. Retrain with "
+            "the current main before running the demo."
+        )
+        sys.exit(1)
+
     if not MANIFEST_PATH.exists():
         print(
             "manifest.csv not found -- extract the dataset to see real "

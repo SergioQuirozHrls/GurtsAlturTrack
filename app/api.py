@@ -32,6 +32,14 @@ with MODEL_PATH.open("rb") as f:
     _ARTIFACT = pickle.load(f)
 _MODEL = _ARTIFACT["model"]
 
+if getattr(_MODEL, "n_features_in_", len(FEATURE_NAMES)) != len(FEATURE_NAMES):
+    logger.error(
+        "model.pkl expects %s features but features/build.py produces %s -- "
+        "stale model, /detect will fall back until it is retrained",
+        getattr(_MODEL, "n_features_in_", "?"),
+        len(FEATURE_NAMES),
+    )
+
 SUPPORTED_SAMPLE_RATE = 8000
 # VAD needs at least one 20 ms frame to find a single turn (features/vad.py);
 # anything shorter carries no behavioral signal, so treat it as invalid input.
