@@ -1,0 +1,43 @@
+SETUP — HackMTY26 / Altur
+==========================
+
+Requires Python 3.14. On macOS, use the python.org build (`python3`), NOT
+/usr/bin/python3 (that's 3.9.6 and will fail). On Windows, install Python
+3.14 from python.org and use `py -3.14`.
+
+1. Clone the repo
+------------------
+git clone git@github.com:SergioQuirozHrls/GurtsAlturTrack.git
+cd GurtsAlturTrack
+
+2. Create and activate a virtual environment
+----------------------------------------------
+macOS / Linux:
+    python3 -m venv .venv
+    source .venv/bin/activate
+
+Windows (PowerShell):
+    py -3.14 -m venv .venv
+    .\.venv\Scripts\Activate.ps1
+    (if blocked: Set-ExecutionPolicy -Scope Process RemoteSigned)
+
+3. Install dependencies
+------------------------
+pip install -r requirements.txt
+
+4. Verify
+----------
+python -c "import numpy, scipy, sklearn, pandas, soundfile, fastapi, uvicorn; print('OK')"
+
+Expect "OK" with no errors. If any import fails, do NOT add a workaround
+dependency — check requirements.txt's header comment first (some packages
+are banned because they break Windows ARM or macOS-without-Homebrew
+machines).
+
+Notes
+-----
+- Do not commit audio/, *.wav, .venv/, or __pycache__/ — see .gitignore.
+- The dataset (audio/, manifest.csv, turns/) is NOT in git. Get it
+  separately (see CLAUDE.md) and extract it into the repo root.
+- Run `ruff format . && ruff check .` before every commit.
+- Full project context, architecture, and workflow rules are in CLAUDE.md.
