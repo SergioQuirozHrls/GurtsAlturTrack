@@ -8,3 +8,5 @@ audio/
 *.wav
 altur-challenge-audio.zip
 transcripts/
+manifest.csv
+turns/
