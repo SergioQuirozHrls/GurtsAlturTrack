@@ -23,6 +23,8 @@ FEATURE_NAMES = [
     "overlap_rate",
     "post_silence_reentry_mean",
     "post_silence_reentry_std",
+    "barge_in_recovery_mean",
+    "barge_in_recovery_std",
 ]
 
 LONG_SILENCE_S = 1.0
@@ -56,7 +58,16 @@ def turn_features(
     response_latencies = []
     barge_ins = 0
     reentries = []
-    for c_start, c_end in caller_turns:
+    # Barge-in recovery: gap from the end of an interrupting caller turn to
+    # the start of their *next* turn. This is the closest we can get, from
+    # turn boundaries alone, to measuring how a caller settles back into the
+    # conversation after cutting the agent off. Humans barge in and then
+    # stumble -- pause to collect a thought, or immediately blurt more --
+    # producing an inconsistent gap here; a TTS+LLM pipeline that barges in
+    # tends to resume on a tighter, more uniform schedule. Unlike timbre,
+    # this is a rhythm signal that should hold up across unseen voices/engines.
+    barge_in_recoveries = []
+    for i, (c_start, c_end) in enumerate(caller_turns):
         prior_agent_ends = [a_end for a_start, a_end in agent_turns if a_end <= c_start]
         overlapping_agent = [
             (a_start, a_end)
@@ -65,6 +76,8 @@ def turn_features(
         ]
         if overlapping_agent:
             barge_ins += 1
+            if i + 1 < len(caller_turns):
+                barge_in_recoveries.append(caller_turns[i + 1][0] - c_end)
             continue
         if not prior_agent_ends:
             continue
@@ -79,6 +92,11 @@ def turn_features(
         feats["response_latency_std"] = float(arr.std())
 
     feats["barge_in_rate"] = barge_ins / len(caller_turns)
+
+    if barge_in_recoveries:
+        arr = np.array(barge_in_recoveries)
+        feats["barge_in_recovery_mean"] = float(arr.mean())
+        feats["barge_in_recovery_std"] = float(arr.std())
 
     if reentries:
         arr = np.array(reentries)
