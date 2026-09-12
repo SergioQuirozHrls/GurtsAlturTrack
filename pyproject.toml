@@ -1,0 +1,5 @@
+[tool.ruff.lint.per-file-ignores]
+# Vendored verbatim from the challenge repo (git@github.com:alturio/hackmty26.git)
+# so it stays byte-identical to what the judge runs -- don't "fix" its style.
+"scripts/check_endpoint.py" = ["SIM115", "BLE001"]
+"scripts/example_server.py" = ["UP031", "F841", "BLE001"]
