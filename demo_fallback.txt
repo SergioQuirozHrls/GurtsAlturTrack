@@ -1,0 +1,83 @@
+DEMO / FALLBACK HOSTING — HackMTY26 / Altur
+=============================================
+
+1. Run the local server
+-------------------------
+From the repo root, with the venv activated and model.pkl present:
+
+    uvicorn app.api:api --host 0.0.0.0 --port 8000
+
+Verify it's up: http://127.0.0.1:8000/docs should return 200 (Swagger UI).
+Get this machine's LAN IP:
+    macOS:   ipconfig getifaddr en0
+    Windows: ipconfig  ->  IPv4 Address of the Wi-Fi adapter
+
+LAN link for judges/teammates on the SAME wifi:
+    http://<LAN-IP>:8000/detect
+
+Known failure mode: many campus/venue wifi networks block device-to-device
+traffic ("client isolation"). Symptom: a teammate's request just times out
+(ping to the LAN IP also times out). If that happens, use the tunnel below
+instead of debugging the LAN further.
+
+2. Cloudflared tunnel fallback (no LAN needed)
+------------------------------------------------
+cloudflared lives at tools/cloudflared (gitignored, not installed
+system-wide — downloaded from Cloudflare's GitHub releases, arm64 build).
+It does not require Homebrew or any system PATH changes.
+
+To install it fresh on another machine:
+    mkdir -p tools
+    curl -L -o tools/cloudflared.tgz \
+      https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-darwin-arm64.tgz
+    cd tools && tar -xzf cloudflared.tgz && rm cloudflared.tgz && chmod +x cloudflared
+    (Windows/Linux: grab the matching asset from the same releases page instead.)
+
+With the local server already running on port 8000, start the tunnel:
+
+    ./tools/cloudflared tunnel --protocol http2 --url http://localhost:8000
+
+Note: --protocol http2 is required on networks that block outbound QUIC/UDP
+(observed on this campus network) -- without it, cloudflared retries QUIC
+for ~30s before falling back, and can be flaky.
+
+It prints a public URL like:
+    https://<random-words>.trycloudflare.com
+
+That URL's /detect works from anywhere with internet, LAN or not. It's a
+free "quick tunnel" with no uptime guarantee and the URL changes every
+restart -- start it once, right before you need it, and don't restart it
+mid-demo or mid-judging.
+
+3. What to test with (Postman or curl)
+----------------------------------------
+Endpoint: POST <link>/detect   (either the LAN link or the tunnel link)
+Header:   Content-Type: application/json
+Body (raw JSON):
+
+    {
+      "call_id": "call_XXXXXXXXXXXX",
+      "audio_base64": "<base64 of a WAV file's bytes>",
+      "sample_rate": 8000,
+      "channels": 2
+    }
+
+Postman has no built-in "attach a file as base64" button for a JSON body --
+base64-encode a WAV from your local audio/ folder yourself first:
+
+    macOS:   base64 -i audio/call_XXXXXXXXXXXX.wav | pbcopy
+    Windows: [Convert]::ToBase64String([IO.File]::ReadAllBytes("audio\call_XXXXXXXXXXXX.wav")) | Set-Clipboard
+
+Paste the clipboard contents into the "audio_base64" field, then Send.
+
+Expected response: HTTP 200 with a body like:
+    {"is_synthetic": false, "confidence": 0.94}
+
+A GET request or opening the link directly in a browser will show
+"Method Not Allowed" -- that's expected, /detect only accepts POST.
+Visiting <link>/docs in a browser instead gives a clickable Swagger UI
+that can send a real POST without Postman.
+
+For an automated check instead of manual Postman clicks, use the judge's
+own client:
+    python scripts/check_endpoint.py --url <link>/detect --split val --n 20
