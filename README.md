@@ -20,8 +20,9 @@ on voice timbre:
   validation AUC falls short.
 - **Speaker-disjoint validation always** — no caller appears in both train and
   val, so the reported AUC/EER reflects generalization, not memorization.
-- A calibrated confidence score (isotonic calibration on held-out val) so the
-  returned `confidence` is meaningful, not just a raw model score.
+- A calibrated confidence score (train.py fits isotonic and sigmoid on held-out
+  val and keeps whichever has the lower Brier score) so the returned
+  `confidence` is meaningful, not just a raw model score.
 
 At inference time, turn boundaries are derived from the raw audio itself
 (`features/vad.py`) since `/detect` only ever receives audio, never the
@@ -44,16 +45,18 @@ uvicorn app.api:api --host 0.0.0.0 --port 8000
 
 `POST /detect`
 
-Request:
+Request (the judge also sends `call_id`, `sample_rate`, `channels`; we only read `audio_base64`):
 
 ```json
-{"audio_base64": "<base64-encoded stereo 8kHz WAV bytes>"}
+{"call_id": "...", "audio_base64": "<base64-encoded stereo 8kHz WAV bytes>", "sample_rate": 8000, "channels": 2}
 ```
 
-Response:
+Response (`confidence` is our confidence in the returned `is_synthetic` verdict, i.e.
+`max(p_synthetic, 1 - p_synthetic)`, not raw `P(synthetic)` — this matches how the
+judge's `check_endpoint.py` recovers `P(synthetic)` for AUC/calibration):
 
 ```json
-{"is_synthetic": false, "confidence": 0.12}
+{"is_synthetic": false, "confidence": 0.88}
 ```
 
 Malformed, mono, or short input never causes a 500 — the handler falls back
