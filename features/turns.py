@@ -16,15 +16,17 @@ FEATURE_NAMES = [
     "n_caller_turns",
     "n_agent_turns",
     "caller_turn_dur_mean",
-    "caller_turn_dur_std",
+    "caller_turn_dur_cv",
     "response_latency_mean",
-    "response_latency_std",
+    "response_latency_cv",
     "barge_in_rate",
     "overlap_rate",
     "post_silence_reentry_mean",
     "post_silence_reentry_std",
-    "barge_in_recovery_mean",
-    "barge_in_recovery_std",
+    "barge_in_overlap_depth_mean",
+    "barge_in_overlap_depth_std",
+    "latency_agent_dur_ratio_mean",
+    "latency_agent_dur_ratio_std",
 ]
 
 LONG_SILENCE_S = 1.0
@@ -32,6 +34,20 @@ LONG_SILENCE_S = 1.0
 
 def _default_features() -> dict[str, float]:
     return dict.fromkeys(FEATURE_NAMES, 0.0)
+
+
+def _cv(arr: np.ndarray) -> float:
+    """Coefficient of variation (std/mean), scale-free unlike raw std -- a
+    call with a slower absolute pace shouldn't register as "more variable"
+    just because its mean is larger. That scale-freeness is what should let
+    this generalize across accents, devices and call lengths (CLAUDE.md
+    section 2 Robustness), where raw std would pick up pace differences that
+    have nothing to do with human vs. synthetic.
+    """
+    mean = float(arr.mean())
+    if mean == 0:
+        return 0.0
+    return float(arr.std() / mean)
 
 
 def turn_features(
@@ -53,22 +69,32 @@ def turn_features(
 
     durations = np.array([end - start for start, end in caller_turns])
     feats["caller_turn_dur_mean"] = float(durations.mean())
-    feats["caller_turn_dur_std"] = float(durations.std())
+    feats["caller_turn_dur_cv"] = _cv(durations)
 
     response_latencies = []
     barge_ins = 0
     reentries = []
-    # Barge-in recovery: gap from the end of an interrupting caller turn to
-    # the start of their *next* turn. This is the closest we can get, from
-    # turn boundaries alone, to measuring how a caller settles back into the
-    # conversation after cutting the agent off. Humans barge in and then
-    # stumble -- pause to collect a thought, or immediately blurt more --
-    # producing an inconsistent gap here; a TTS+LLM pipeline that barges in
-    # tends to resume on a tighter, more uniform schedule. Unlike timbre,
-    # this is a rhythm signal that should hold up across unseen voices/engines.
-    barge_in_recoveries = []
-    for i, (c_start, c_end) in enumerate(caller_turns):
-        prior_agent_ends = [a_end for a_start, a_end in agent_turns if a_end <= c_start]
+    # Barge-in overlap depth: how far into the agent's turn the caller talks
+    # before the agent's turn ends, i.e. how deep each cut-in goes. (An
+    # earlier version measured the gap to the caller's *next* turn instead --
+    # that didn't survive speaker-disjoint val, see PR discussion.) Depth is
+    # read straight off the two channels' overlap, independent of wording or
+    # voice, so a consistently shallow/deep cut-in pattern should transfer to
+    # callers and TTS engines never seen in training.
+    barge_in_depths = []
+    # Response-latency-to-agent-turn-length ratio: humans tend to need more
+    # thinking time after a longer, more information-dense agent turn: an
+    # ASR->LLM->TTS pipeline's latency is dominated by fixed per-turn
+    # pipeline overhead and should stay roughly flat regardless of how long
+    # the agent just spoke. This is a relationship between two timing
+    # signals rather than an absolute latency value, so it doesn't depend on
+    # who is speaking or what was said -- harder for a synthetic pipeline to
+    # coincidentally match, and it should hold across unseen speakers/engines.
+    latency_agent_dur_ratios = []
+    for c_start, c_end in caller_turns:
+        prior_agent = [
+            (a_start, a_end) for a_start, a_end in agent_turns if a_end <= c_start
+        ]
         overlapping_agent = [
             (a_start, a_end)
             for a_start, a_end in agent_turns
@@ -76,27 +102,36 @@ def turn_features(
         ]
         if overlapping_agent:
             barge_ins += 1
-            if i + 1 < len(caller_turns):
-                barge_in_recoveries.append(caller_turns[i + 1][0] - c_end)
+            _, a_end = max(overlapping_agent, key=lambda t: t[1])
+            barge_in_depths.append(min(c_end, a_end) - c_start)
             continue
-        if not prior_agent_ends:
+        if not prior_agent:
             continue
-        gap = c_start - max(prior_agent_ends)
+        a_start, a_end = max(prior_agent, key=lambda t: t[1])
+        gap = c_start - a_end
         response_latencies.append(gap)
+        agent_dur = a_end - a_start
+        if agent_dur > 0:
+            latency_agent_dur_ratios.append(gap / agent_dur)
         if gap >= LONG_SILENCE_S:
             reentries.append(gap)
 
     if response_latencies:
         arr = np.array(response_latencies)
         feats["response_latency_mean"] = float(arr.mean())
-        feats["response_latency_std"] = float(arr.std())
+        feats["response_latency_cv"] = _cv(arr)
 
     feats["barge_in_rate"] = barge_ins / len(caller_turns)
 
-    if barge_in_recoveries:
-        arr = np.array(barge_in_recoveries)
-        feats["barge_in_recovery_mean"] = float(arr.mean())
-        feats["barge_in_recovery_std"] = float(arr.std())
+    if barge_in_depths:
+        arr = np.array(barge_in_depths)
+        feats["barge_in_overlap_depth_mean"] = float(arr.mean())
+        feats["barge_in_overlap_depth_std"] = float(arr.std())
+
+    if latency_agent_dur_ratios:
+        arr = np.array(latency_agent_dur_ratios)
+        feats["latency_agent_dur_ratio_mean"] = float(arr.mean())
+        feats["latency_agent_dur_ratio_std"] = float(arr.std())
 
     if reentries:
         arr = np.array(reentries)
