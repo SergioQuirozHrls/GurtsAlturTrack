@@ -18,9 +18,9 @@ import time
 from pathlib import Path
 
 import numpy as np
-from sklearn.calibration import CalibratedClassifierCV
+from sklearn.calibration import CalibratedClassifierCV, calibration_curve
 from sklearn.ensemble import HistGradientBoostingClassifier
-from sklearn.metrics import roc_auc_score, roc_curve
+from sklearn.metrics import brier_score_loss, roc_auc_score, roc_curve
 
 from features.build import FEATURE_NAMES, build_dataset
 
@@ -64,11 +64,43 @@ def main() -> None:
     x_train, x_val = x[split == "train"], x[split == "val"]
     y_train, y_val = y[split == "train"], y[split == "val"]
 
-    base = HistGradientBoostingClassifier(random_state=RANDOM_STATE)
-    model = CalibratedClassifierCV(base, method="isotonic", cv=3)
-    model.fit(x_train, y_train)
+    # With only ~282 train rows, CalibratedClassifierCV(cv=3)'s internal
+    # calibration slice is ~94 samples per fold. sklearn's own calibration
+    # guide warns isotonic "is not advised" below ~1000 calibration samples
+    # because it tends to overfit, and recommends sigmoid (Platt) instead:
+    # https://scikit-learn.org/stable/modules/calibration.html#calibrating-a-classifier
+    # We don't take that on faith -- both are fit and compared on our real,
+    # speaker-disjoint val split (Brier score + reliability curve) and the
+    # winner is what ships in model.pkl.
+    candidates: dict[str, dict] = {}
+    for method in ("isotonic", "sigmoid"):
+        base = HistGradientBoostingClassifier(random_state=RANDOM_STATE)
+        candidate_model = CalibratedClassifierCV(base, method=method, cv=3)
+        candidate_model.fit(x_train, y_train)
 
-    val_scores = model.predict_proba(x_val)[:, 1]
+        scores = candidate_model.predict_proba(x_val)[:, 1]
+        brier = brier_score_loss(y_val, scores)
+        mean_pred, frac_pos = calibration_curve(
+            y_val, scores, n_bins=5, strategy="quantile"
+        )
+        candidates[method] = {
+            "model": candidate_model,
+            "scores": scores,
+            "brier": brier,
+            "curve": list(zip(mean_pred, frac_pos)),
+        }
+        curve_str = ", ".join(
+            f"({p:.2f}->{o:.2f})" for p, o in candidates[method]["curve"]
+        )
+        print(
+            f"[{method}] val Brier: {brier:.4f}  reliability (pred->observed): {curve_str}"
+        )
+
+    best_method = min(candidates, key=lambda m: candidates[m]["brier"])
+    print(f"calibration choice: {best_method} (lower val Brier score wins)")
+    model = candidates[best_method]["model"]
+    val_scores = candidates[best_method]["scores"]
+
     auc = roc_auc_score(y_val, val_scores)
     eer = _eer(y_val, val_scores)
 
