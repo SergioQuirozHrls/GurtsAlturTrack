@@ -2,6 +2,7 @@
 __pycache__/
 *.pyc
 .DS_Store
+tools/
 
 # Dataset — never commit (challenge terms: do not redistribute)
 audio/

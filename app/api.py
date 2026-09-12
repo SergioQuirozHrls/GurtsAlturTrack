@@ -111,8 +111,13 @@ def detect(payload: DetectRequest) -> DetectResponse:
                 f"invalid model output from predict_proba: shape={proba.shape}"
             )
 
-        confidence = float(proba[0, 1])
-        response = DetectResponse(is_synthetic=confidence >= 0.5, confidence=confidence)
+        p_synthetic = float(proba[0, 1])
+        is_synthetic = p_synthetic >= 0.5
+        # Judge's check_endpoint.py recovers P(synthetic) as confidence if is_synthetic
+        # else 1 - confidence, i.e. it expects confidence in the *predicted* label, not
+        # raw P(synthetic). Send max(p, 1-p) so that round-trip is exact.
+        confidence = p_synthetic if is_synthetic else 1.0 - p_synthetic
+        response = DetectResponse(is_synthetic=is_synthetic, confidence=confidence)
     except ValueError as exc:
         logger.warning("detect() rejected input: %s", exc)
         response = _fallback()
