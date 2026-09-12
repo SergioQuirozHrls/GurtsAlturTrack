@@ -68,6 +68,14 @@ def build_dataset(
     """
     manifest = pd.read_csv(manifest_path, encoding="utf-8")
 
+    split_counts = manifest.groupby("anon_id")["split"].nunique()
+    leaked = sorted(split_counts[split_counts > 1].index)
+    if leaked:
+        raise ValueError(
+            "anon_id values appear in both train and val splits -- this is a "
+            f"scoring-on-train fail condition per CLAUDE.md section 2: {leaked}"
+        )
+
     rows: list[list[float]] = []
     labels: list[int] = []
     splits: list[str] = []
