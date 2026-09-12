@@ -1,0 +1,19 @@
+# Python 3.14. Wheel availability VERIFIED for every pin on:
+#   win_amd64, win_arm64, macosx arm64, macosx x86_64
+# Mixed-OS team (macOS + Windows) — keep it that way. Before adding anything, run:
+#   pip download --only-binary=:all: --platform win_amd64 --python-version 3.14 --abi cp314 -d /tmp/chk <pkg>
+#   pip download --only-binary=:all: --platform win_arm64 --python-version 3.14 --abi cp314 -d /tmp/chk <pkg>
+#
+# BANNED — each one breaks at least one teammate's machine:
+#   librosa        -> dep soxr has NO win_arm64 wheel. Use scipy.signal instead.
+#   lightgbm       -> needs libomp.dylib; no Homebrew on the macOS machine. Use sklearn HistGradientBoosting.
+#   xgboost        -> same libomp problem.
+#   uvicorn[standard] -> pulls uvloop, which does not support Windows. Plain uvicorn only.
+numpy==2.5.3
+scipy==1.18.1
+scikit-learn==1.9.1
+pandas==3.0.5
+soundfile==0.14.0
+fastapi==0.141.1
+uvicorn==0.52.4
+ruff==0.16.7

@@ -1,0 +1,10 @@
+.venv/
+__pycache__/
+*.pyc
+.DS_Store
+
+# Dataset — never commit (challenge terms: do not redistribute)
+audio/
+*.wav
+altur-challenge-audio.zip
+transcripts/

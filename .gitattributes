@@ -1,0 +1,6 @@
+# Mixed macOS/Windows team: normalize line endings so diffs stay readable
+# and ruff format doesn't fight CRLF. Without this, every Windows commit
+# looks like it rewrote the whole file.
+* text=auto eol=lf
+*.pkl binary
+*.wav binary
