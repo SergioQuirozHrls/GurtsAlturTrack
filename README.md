@@ -33,6 +33,28 @@ At inference time, turn boundaries are derived from the raw audio itself
 (`features/vad.py`) since `/detect` only ever receives audio, never the
 offline `turns/*.json`.
 
+## Is val AUC 1.000 trustworthy?
+
+Speaker-disjoint val AUC lands at 1.000 (EER 0.000, 71 val calls), which is
+suspicious enough to check rather than trust. We ran two follow-up tests:
+
+- **Ablation**: turn-timing alone already scores 0.9646 AUC / 0.0711 EER;
+  acoustic + liveness features add the last ~0.035 AUC and cut EER to 0.
+  Dropping any single top feature (by permutation importance) doesn't move
+  AUC at all — separation is spread across many correlated features, not
+  carried by one.
+- **Loudness normalization**: raw `rms_mean` differs ~2.4x between human and
+  synthetic calls, a plausible recording-pipeline artifact rather than a real
+  signal. RMS-normalizing `ch0` before feature extraction collapsed that gap
+  to ~1.2x but only dropped val AUC to 0.9992 — so the acoustic/liveness
+  signal is largely real, not a loudness confound.
+
+Open risk that this can't rule out: `manifest.csv` has no TTS-engine column,
+so we can't verify how many distinct engines back the `synthetic` rows in
+either split. A near-perfect score here can still mean "detects this
+dataset's engines" rather than "detects synthetic-ness in general" — exactly
+what the hidden, unseen-engine test set is designed to catch.
+
 ## Run it
 
 ```bash
