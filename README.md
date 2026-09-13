@@ -18,6 +18,11 @@ on voice timbre:
 - **Acoustic features** (`features/acoustic.py`), a secondary spectral/prosody
   summary (scipy.signal only), added to the model only if the turn-feature-only
   validation AUC falls short.
+- **Liveness features** (`features/liveness.py`), a pitch-tracker-based signal
+  independent of behavior or broad prosody: F0 jitter, amplitude shimmer, an
+  HNR proxy, voiced ratio, and noise-floor stability. Real vocal folds wobble
+  cycle-to-cycle in ways many vocoders smooth over — this stays useful even if
+  a synthetic caller's turn-timing gets good enough to blend in.
 - **Speaker-disjoint validation always** — no caller appears in both train and
   val, so the reported AUC/EER reflects generalization, not memorization.
 - A calibrated confidence score (train.py fits isotonic and sigmoid on held-out
