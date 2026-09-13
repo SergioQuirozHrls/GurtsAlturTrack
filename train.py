@@ -22,7 +22,7 @@ from sklearn.calibration import CalibratedClassifierCV, calibration_curve
 from sklearn.ensemble import HistGradientBoostingClassifier
 from sklearn.inspection import permutation_importance
 from sklearn.metrics import brier_score_loss, roc_auc_score, roc_curve
-from sklearn.model_selection import StratifiedKFold, cross_val_score
+from sklearn.model_selection import GridSearchCV, StratifiedKFold, cross_val_score
 
 from features.build import FEATURE_NAMES, build_dataset
 
@@ -34,6 +34,22 @@ MODEL_PATH = ROOT / "model.pkl"
 
 RANDOM_STATE = 0
 AUC_FLOOR = 0.65
+
+# Regularization grid for HistGradientBoostingClassifier, searched by CV on
+# the train split only (val is never touched during this search -- tuning
+# against val would just be overfitting the val metric by hand instead of
+# fixing anything). At ~280 train rows and 19 features the default settings
+# have enough capacity to carve out a near-perfect decision boundary on a
+# small held-out set; these ranges bias the search toward shallower, less
+# confident trees (fewer leaves, larger leaves, stronger L2) to see whether a
+# more conservative model is still competitive on val, which is a better
+# signal than one point estimate at default settings.
+REG_PARAM_GRID = {
+    "max_leaf_nodes": [7, 15, 31],
+    "min_samples_leaf": [20, 40, 60],
+    "l2_regularization": [0.0, 1.0, 10.0],
+    "max_iter": [50, 100],
+}
 
 
 def _synthetic_dataset(n_calls: int = 200) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
@@ -108,6 +124,29 @@ def main() -> None:
     x_train, x_val = x[split == "train"], x[split == "val"]
     y_train, y_val = y[split == "train"], y[split == "val"]
 
+    search = GridSearchCV(
+        HistGradientBoostingClassifier(random_state=RANDOM_STATE),
+        REG_PARAM_GRID,
+        scoring="roc_auc",
+        cv=StratifiedKFold(n_splits=5, shuffle=True, random_state=RANDOM_STATE),
+        refit=False,
+    )
+    search.fit(x_train, y_train)
+    best_params = search.best_params_
+    default_params = {
+        "max_leaf_nodes": 31,
+        "min_samples_leaf": 20,
+        "l2_regularization": 0.0,
+        "max_iter": 100,
+    }
+    default_idx = search.cv_results_["params"].index(default_params)
+    default_cv_auc = search.cv_results_["mean_test_score"][default_idx]
+    print(
+        f"regularization search (5-fold CV AUC on train only): best "
+        f"{best_params} -> CV AUC {search.best_score_:.4f} "
+        f"(sklearn defaults scored {default_cv_auc:.4f})"
+    )
+
     # With only ~282 train rows, CalibratedClassifierCV(cv=3)'s internal
     # calibration slice is ~94 samples per fold. sklearn's own calibration
     # guide warns isotonic "is not advised" below ~1000 calibration samples
@@ -118,7 +157,7 @@ def main() -> None:
     # winner is what ships in model.pkl.
     candidates: dict[str, dict] = {}
     for method in ("isotonic", "sigmoid"):
-        base = HistGradientBoostingClassifier(random_state=RANDOM_STATE)
+        base = HistGradientBoostingClassifier(random_state=RANDOM_STATE, **best_params)
         candidate_model = CalibratedClassifierCV(base, method=method, cv=3)
         candidate_model.fit(x_train, y_train)
 
@@ -187,7 +226,7 @@ def main() -> None:
 
     cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=RANDOM_STATE)
     cv_auc = cross_val_score(
-        HistGradientBoostingClassifier(random_state=RANDOM_STATE),
+        HistGradientBoostingClassifier(random_state=RANDOM_STATE, **best_params),
         x_train,
         y_train,
         cv=cv,
@@ -212,7 +251,7 @@ def main() -> None:
     top_idx = int(order[0])
     keep_cols = np.ones(x.shape[1], dtype=bool)
     keep_cols[top_idx] = False
-    ablated = HistGradientBoostingClassifier(random_state=RANDOM_STATE)
+    ablated = HistGradientBoostingClassifier(random_state=RANDOM_STATE, **best_params)
     ablated.fit(x_train[:, keep_cols], y_train)
     ablated_auc = roc_auc_score(y_val, ablated.predict_proba(x_val[:, keep_cols])[:, 1])
     print(
