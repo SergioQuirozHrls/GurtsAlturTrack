@@ -14,11 +14,13 @@ import soundfile as sf
 
 from features.acoustic import FEATURE_NAMES as ACOUSTIC_FEATURE_NAMES
 from features.acoustic import acoustic_features
+from features.liveness import FEATURE_NAMES as LIVENESS_FEATURE_NAMES
+from features.liveness import liveness_features
 from features.turns import FEATURE_NAMES as TURN_FEATURE_NAMES
 from features.turns import turn_features
 from features.vad import detect_turns
 
-FEATURE_NAMES = [*TURN_FEATURE_NAMES, *ACOUSTIC_FEATURE_NAMES]
+FEATURE_NAMES = [*TURN_FEATURE_NAMES, *ACOUSTIC_FEATURE_NAMES, *LIVENESS_FEATURE_NAMES]
 
 
 def call_features(ch0: np.ndarray, ch1: np.ndarray, sr: int = 8000) -> dict[str, float]:
@@ -29,6 +31,7 @@ def call_features(ch0: np.ndarray, ch1: np.ndarray, sr: int = 8000) -> dict[str,
     turns = detect_turns(ch0, ch1, sr)
     feats = turn_features(turns["caller_turns"], turns["agent_turns"])
     feats.update(acoustic_features(ch0, sr))
+    feats.update(liveness_features(ch0, sr))
     return feats
 
 
@@ -90,6 +93,7 @@ def build_dataset(
             caller_turns, agent_turns = provided
             feats = turn_features(caller_turns, agent_turns)
             feats.update(acoustic_features(ch0, sr))
+            feats.update(liveness_features(ch0, sr))
         else:
             feats = call_features(ch0, ch1, sr)
 
