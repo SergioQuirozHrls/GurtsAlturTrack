@@ -33,21 +33,55 @@ To install it fresh on another machine:
     cd tools && tar -xzf cloudflared.tgz && rm cloudflared.tgz && chmod +x cloudflared
     (Windows/Linux: grab the matching asset from the same releases page instead.)
 
-With the local server already running on port 8000, start the tunnel:
+Note: --protocol http2 (used below) is required on networks that block
+outbound QUIC/UDP (observed on this campus network) -- without it,
+cloudflared retries QUIC for ~30s before falling back, and can be flaky.
+
+2a. Named tunnel (stable link — use this for judging day)
+-------------------------------------------------------------
+Requires a free Cloudflare account with gurtsprime.com added as a zone.
+Already set up once (tunnel "altur-detect"); to reuse it on this machine
+or reproduce it on another, credentials/config live under
+tools/.cloudflared/ (gitignored, contains secrets — never commit).
+
+One-time setup (already done, keep for reference / re-doing on a new machine):
+    export HOME=<repo-root>/tools/.cloudflared
+    ./tools/cloudflared tunnel login                      # opens a browser, authorize gurtsprime.com
+    ./tools/cloudflared tunnel create altur-detect
+    ./tools/cloudflared tunnel route dns altur-detect altur-detect.gurtsprime.com
+    # then write tools/.cloudflared/config.yml:
+    #   tunnel: <tunnel-id-from-create-output>
+    #   credentials-file: <repo-root>/tools/.cloudflared/.cloudflared/<tunnel-id>.json
+    #   ingress:
+    #     - hostname: altur-detect.gurtsprime.com
+    #       service: http://localhost:8000
+    #     - service: http_status:404
+
+To run it (every time, once the local server on port 8000 is up):
+    ./tools/cloudflared tunnel --protocol http2 --config tools/.cloudflared/config.yml run altur-detect
+
+Stable link (does NOT change between restarts, unlike the quick tunnel):
+    https://altur-detect.gurtsprime.com/detect
+
+This uses 4 redundant edge connections and is tied to the team's Cloudflare
+account (no "quick tunnel" uptime disclaimer) -- this is the one to hand to
+judges if the venue wifi has client isolation like this campus network does.
+
+2b. Quick tunnel (zero setup, less stable — emergency-only backup)
+------------------------------------------------------------------
+If tools/.cloudflared/ isn't set up on a machine and there's no time to run
+the login flow, use the anonymous quick tunnel instead. With the local
+server already running on port 8000:
 
     ./tools/cloudflared tunnel --protocol http2 --url http://localhost:8000
-
-Note: --protocol http2 is required on networks that block outbound QUIC/UDP
-(observed on this campus network) -- without it, cloudflared retries QUIC
-for ~30s before falling back, and can be flaky.
 
 It prints a public URL like:
     https://<random-words>.trycloudflare.com
 
 That URL's /detect works from anywhere with internet, LAN or not. It's a
-free "quick tunnel" with no uptime guarantee and the URL changes every
-restart -- start it once, right before you need it, and don't restart it
-mid-demo or mid-judging.
+free tunnel with NO uptime guarantee and the URL changes every restart --
+start it once, right before you need it, and don't restart it mid-demo or
+mid-judging. Prefer 2a whenever possible.
 
 3. What to test with (Postman or curl)
 ----------------------------------------
